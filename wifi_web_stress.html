@@ -1,0 +1,282 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WiFi Stress Test (web)</title>
+<style>
+:root{color-scheme:dark;--bg:#121211;--surface:#1a1a19;--line:#2c2c2a;--grid:#262624;
+--t1:#f0efec;--t2:#c3c2b7;--t3:#8d8c84;--down:#3987e5;--up:#d95926;--lat:#199e70;--bad:#e66767;--ok:#0ca30c;--warn:#c98500}
+@media (prefers-color-scheme:light){:root{color-scheme:light;--bg:#f4f3f0;--surface:#fcfcfb;--line:#dcdbd5;--grid:#ecebe6;
+--t1:#0b0b0b;--t2:#52514e;--t3:#7a7973;--down:#2a78d6;--up:#eb6834;--lat:#1baf7a;--bad:#e34948;--ok:#008300;--warn:#eda100}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--t1);font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:1000px;margin:0 auto;padding:18px 14px 60px}
+h1{font-size:20px;margin:0 0 2px} .sub{color:var(--t3);font-size:13px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+.grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(230px,1fr))}
+.lbl{font-size:12px;color:var(--t3);text-transform:uppercase;letter-spacing:.04em}
+.big{font-size:34px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.15}
+.big small{font-size:14px;color:var(--t3);font-weight:400}
+.row{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.dot{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px}
+.controls{display:flex;gap:14px;flex-wrap:wrap;align-items:end}
+.controls label{display:flex;flex-direction:column;font-size:12px;color:var(--t3);gap:4px}
+select,input[type=range],input[type=text]{font:inherit;color:var(--t1)}
+select,input[type=text]{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:7px 9px}
+input[type=text]{min-width:260px}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:10px 22px;cursor:pointer;background:var(--down);color:#fff}
+button.stop{background:var(--bad)} button:disabled{opacity:.5}
+canvas{width:100%;display:block}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14px}
+th{font-size:12px;color:var(--t3);font-weight:500;text-align:right;padding:4px 8px;border-bottom:1px solid var(--line)}
+td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--grid)} th:first-child,td:first-child{text-align:left}
+.note{color:var(--t3);font-size:12.5px} .legend{display:flex;gap:16px;font-size:13px;color:var(--t2);margin-bottom:6px;flex-wrap:wrap}
+.tip{position:fixed;pointer-events:none;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12.5px;display:none;z-index:9}
+.pill{display:inline-block;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:600;color:#fff}
+.err{background:color-mix(in srgb,var(--bad) 18%,var(--surface));border:1px solid var(--bad);border-radius:10px;padding:10px 14px;margin-bottom:12px;display:none}
+details{margin-top:10px}
+details summary{cursor:pointer;color:var(--t2);font-size:13px}
+</style></head><body><main>
+<h1>WiFi Stress Test (solo navegador)</h1>
+<div class="sub">Genera tráfico de bajada/subida contra servidores públicos de prueba de velocidad para ver cuánto aguanta tu red. No necesita instalar nada: ábrelo en cada dispositivo que quieras poner a prueba.</div>
+
+<div class="err" id="errBox"></div>
+
+<div class="card"><div class="controls">
+  <label>Modo<select id="mode">
+    <option value="ramp">Escalonado (busca el punto de saturación)</option>
+    <option value="fixed" selected>Fijo (carga constante)</option></select></label>
+  <label>Dirección<select id="dir">
+    <option value="both">Bajada + subida</option><option value="down">Solo bajada</option><option value="up">Solo subida</option></select></label>
+  <label id="lblN">Intensidad: <b id="nv">4</b> conexiones<input id="n" type="range" min="1" max="6" value="4"></label>
+  <label id="lblFocus">Modo foco<select id="focus">
+    <option value="0">Hasta que lo pare</option>
+    <option value="25">25 min</option><option value="50">50 min</option>
+    <option value="90">90 min</option><option value="120">2 h</option><option value="240">4 h</option></select></label>
+  <label id="lblCap">Tope de datos<select id="cap">
+    <option value="0">Sin tope</option><option value="5">5 GB</option>
+    <option value="20">20 GB</option><option value="50">50 GB</option>
+    <option value="100">100 GB</option><option value="500">500 GB</option></select></label>
+  <label id="lblT">Duración<select id="secs"><option>10</option><option selected>20</option><option>30</option><option>60</option><option>120</option></select></label>
+  <button id="go">Iniciar</button>
+</div>
+<div class="note" style="margin-top:10px" id="modeNote"></div>
+<details><summary>Opciones avanzadas</summary>
+  <div class="controls" style="margin-top:10px">
+    <label style="flex:1">URL extra de descarga (opcional, debe permitir CORS)
+      <input id="extraUrl" type="text" placeholder="https://ejemplo.com/archivo-grande.bin"></label>
+  </div>
+  <div class="note" style="margin-top:6px">El navegador limita a 6 conexiones simultáneas contra el mismo servidor (speed.cloudflare.com). Si añades una URL de otro dominio que sirva un archivo grande, se abren conexiones extra contra ella para sumar más carga.</div>
+</details>
+</div>
+
+<div class="grid">
+  <div class="card"><div class="lbl">Este dispositivo</div>
+    <div class="row"><div class="big" style="color:var(--down)">↓ <span id="myD">0</span> <small>Mbps</small></div>
+    <div class="big" style="color:var(--up)">↑ <span id="myU">0</span> <small>Mbps</small></div></div>
+    <div class="note">Pico: <b id="peak">0</b> Mbps · Transferido: <b id="totGB">0.00</b> GB</div></div>
+  <div class="card"><div class="lbl">Latencia (ping)</div>
+    <div class="big" style="color:var(--lat)"><span id="latNow">–</span> <small>ms</small></div>
+    <div class="note">reposo <b id="latIdle">–</b> ms · carga <b id="latLoad">–</b> ms · <span id="bloat"></span></div></div>
+  <div class="card"><div class="lbl">Tiempo</div>
+    <div class="big" style="color:var(--t1)"><span id="elapsed">00:00</span></div>
+    <div class="note" id="focusNote"></div></div>
+</div>
+
+<div class="card"><div class="lbl">Rendimiento (Mbps)</div>
+  <div class="legend"><span><i class="dot" style="background:var(--down)"></i>Bajada</span><span><i class="dot" style="background:var(--up)"></i>Subida</span></div>
+  <canvas id="c1" height="210"></canvas></div>
+<div class="card"><div class="lbl">Latencia bajo carga (ms)</div>
+  <div class="legend"><span><i class="dot" style="background:var(--lat)"></i>Ping desde este dispositivo</span><span id="jit" class="note"></span></div>
+  <canvas id="c2" height="130"></canvas></div>
+
+<div class="card" id="resCard" style="display:none"><div class="lbl">Resultado por nivel de carga</div>
+  <table><thead><tr><th>Conexiones</th><th>↓ Mbps</th><th>↑ Mbps</th><th>Total</th><th>Ping</th></tr></thead><tbody id="res"></tbody></table>
+  <div class="note" id="verdict" style="margin-top:8px;color:var(--t2)"></div></div>
+
+<div class="note">Usa por defecto los servidores públicos de prueba de velocidad de Cloudflare (speed.cloudflare.com). Satura tu WiFi <b>y también tu línea de internet</b>, porque el tráfico sale y vuelve por tu conexión: si tu tarifa tiene límite de datos, esto lo consume. Solo úsalo en tu propia red.</div>
+<div class="tip" id="tip"></div>
+</main>
+<script>
+const $=id=>document.getElementById(id), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const CF='https://speed.cloudflare.com';
+let running=false, myD=0, myU=0, workers=[], errCount=0, totBytes=0, startTime=0, stopAt=0, capBytes=0;
+const hist=[];          // {t, md, mu}
+const lat=[];           // {t, ms|null, phase}
+let phase='idle', peak=0;
+const ulBlob=(()=>{const a=new Uint8Array(20<<20);for(let i=0;i<a.length;i+=65536)crypto.getRandomValues(a.subarray(i,i+65536));return new Blob([a])})();
+
+$('n').oninput=()=>$('nv').textContent=$('n').value;
+$('mode').onchange=()=>{const r=$('mode').value==='ramp';$('lblN').style.display=r?'none':'flex';$('lblT').style.display=r?'none':'flex';
+  $('modeNote').textContent=r?'Escalonado: sube de 1 a 6 conexiones (6 s cada nivel). Cuando el rendimiento deja de crecer, ese es tu techo.':'Fijo: mantiene la carga elegida durante el tiempo que marques.'};
+$('mode').onchange();
+
+function showErr(msg){ $('errBox').textContent=msg; $('errBox').style.display='block'; }
+function clearErr(){ $('errBox').style.display='none'; }
+
+/* ---------- generadores de carga ---------- */
+function startWorker(kind,url){
+  const w={kind,stop:false,ac:new AbortController(),xhr:null,fails:0};
+  (async()=>{
+    while(!w.stop){
+      try{
+        if(kind==='down'){
+          const target=url||(CF+'/__down?bytes=26214400&r='+Math.random());
+          const r=await fetch(target,{signal:w.ac.signal,cache:'no-store'});
+          if(!r.ok) throw new Error('http '+r.status);
+          const rd=r.body.getReader();
+          for(;;){const {done,value}=await rd.read(); if(done||w.stop)break; myD+=value.length; totBytes+=value.length}
+          w.fails=0;
+        }else{
+          await new Promise((res,rej)=>{
+            const x=new XMLHttpRequest(); w.xhr=x; let last=0;
+            x.open('POST',CF+'/__up'); x.upload.onprogress=e=>{const d=e.loaded-last;myU+=d;totBytes+=d;last=e.loaded};
+            x.onload=()=>{w.fails=0;res()}; x.onerror=()=>rej(new Error('upload error')); x.onabort=()=>res();
+            x.send(ulBlob);
+          });
+        }
+        clearErr();
+      }catch(e){
+        if(w.stop)return;
+        w.fails++;
+        if(w.fails>=3) showErr('No se puede transferir datos ahora mismo (sin internet, o algo bloquea speed.cloudflare.com). Reintentando…');
+        await sleep(500);
+      }
+    }
+  })();
+  workers.push(w);
+}
+function stopWorker(w){w.stop=true;try{w.ac.abort()}catch(e){};try{w.xhr&&w.xhr.abort()}catch(e){}}
+function setLoad(n,dir){
+  let wd=0,wu=0;
+  if(dir==='down')wd=n; else if(dir==='up')wu=n; else {wd=Math.ceil(n/2);wu=Math.max(1,Math.floor(n/2))}
+  const extra=$('extraUrl').value.trim();
+  for(const [kind,want] of [['down',wd],['up',wu]]){
+    let cur=workers.filter(w=>w.kind===kind&&!w.stop);
+    while(cur.length<want){
+      // si hay URL extra y ya saturamos las 6 conexiones de Cloudflare en bajada, usa la URL extra
+      const useExtra = kind==='down' && extra && cur.length>=6;
+      startWorker(kind, useExtra?extra:null);
+      cur=workers.filter(w=>w.kind===kind&&!w.stop);
+    }
+    while(cur.length>want){stopWorker(cur.pop())}
+  }
+  workers=workers.filter(w=>!w.stop);
+}
+function stopAll(){workers.forEach(stopWorker);workers=[]}
+
+/* ---------- ping continuo ---------- */
+let pingTimer=null;
+function startPing(){
+  pingTimer=setInterval(async()=>{
+    const t0=performance.now(), ac=new AbortController(), to=setTimeout(()=>ac.abort(),2000);
+    let ms=null;
+    try{await fetch(CF+'/__down?bytes=0&r='+Math.random(),{cache:'no-store',signal:ac.signal}); ms=performance.now()-t0}catch(e){}
+    clearTimeout(to); lat.push({t:Date.now(),ms,phase}); if(lat.length>3000)lat.shift();
+  },250);
+}
+function stopPing(){ if(pingTimer){clearInterval(pingTimer);pingTimer=null} }
+
+/* ---------- muestreo cada 500 ms ---------- */
+let pD=0,pU=0,pT=0,smD=0,smU=0,sampleTimer=null;
+function startSampling(){
+  pD=myD;pU=myU;pT=performance.now();
+  sampleTimer=setInterval(()=>{
+    const now=performance.now(), dt=(now-pT)/1000; pT=now;
+    const mD=(myD-pD)*8/dt/1e6, mU=(myU-pU)*8/dt/1e6; pD=myD; pU=myU;
+    hist.push({t:Date.now(),md:mD,mu:mU}); if(hist.length>400)hist.shift();
+    peak=Math.max(peak,mD+mU);
+    smD=smD*.4+mD*.6; smU=smU*.4+mU*.6;
+    $('myD').textContent=smD.toFixed(1); $('myU').textContent=smU.toFixed(1);
+    $('peak').textContent=peak.toFixed(0);
+    $('totGB').textContent=(totBytes/1e9).toFixed(2);
+    const last=lat[lat.length-1]; $('latNow').textContent=last&&last.ms!=null?last.ms.toFixed(1):'–';
+    const el=Math.floor((Date.now()-startTime)/1000);
+    $('elapsed').textContent=String(Math.floor(el/60)).padStart(2,'0')+':'+String(el%60).padStart(2,'0');
+    draw();
+    if(stopAt && Date.now()>=stopAt){ $('focusNote').textContent='Tiempo de foco cumplido.'; stopRun(); }
+    if(capBytes && totBytes>=capBytes){ $('focusNote').textContent='Tope de datos alcanzado.'; stopRun(); }
+  },500);
+}
+function stopSampling(){ if(sampleTimer){clearInterval(sampleTimer);sampleTimer=null} }
+
+/* ---------- gráficas (canvas, sin librerías) ---------- */
+function setup(c){const dpr=devicePixelRatio||1,w=c.clientWidth,h=+c.getAttribute('height');c.width=w*dpr;c.height=h*dpr;const g=c.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);return{g,w,h}}
+function niceMax(v){if(v<=10)return 10;const p=Math.pow(10,Math.floor(Math.log10(v))),m=v/p;return (m<=1.5?1.5:m<=2?2:m<=3?3:m<=5?5:10)*p}
+const SPAN=90000;
+function drawSeries(c,series,yfmt,minMax){
+  const {g,w,h}=setup(c), L=46,R=10,T=8,B=20, now=Date.now(), t0=now-SPAN;
+  let mx=minMax; for(const s of series)for(const p of s.pts)if(p.v!=null&&p.t>=t0)mx=Math.max(mx,p.v);
+  mx=niceMax(mx*1.05);
+  const X=t=>L+(t-t0)/SPAN*(w-L-R), Y=v=>T+(1-v/mx)*(h-T-B);
+  g.font='11px system-ui';g.fillStyle=css('--t3');g.strokeStyle=css('--grid');g.lineWidth=1;
+  for(let i=0;i<=4;i++){const v=mx*i/4,y=Y(v);g.beginPath();g.moveTo(L,y);g.lineTo(w-R,y);g.stroke();g.textAlign='right';g.fillText(yfmt(v),L-6,y+4)}
+  g.textAlign='center'; for(let s=0;s<=90;s+=30){g.fillText(s===0?'ahora':'-'+s+'s',X(now-s*1000),h-4)}
+  for(const s of series){
+    g.strokeStyle=css(s.color);g.lineWidth=2;g.lineJoin='round';g.beginPath();let on=false;
+    for(const p of s.pts){if(p.t<t0)continue; if(p.v==null){on=false;continue} const x=X(p.t),y=Y(p.v); if(!on){g.moveTo(x,y);on=true}else g.lineTo(x,y)}
+    g.stroke();
+  }
+  c._m={series,X,L,R,w,t0,now,Y,yfmt};
+}
+function draw(){
+  drawSeries($('c1'),[
+    {name:'Bajada',color:'--down',pts:hist.map(p=>({t:p.t,v:p.md}))},
+    {name:'Subida',color:'--up',pts:hist.map(p=>({t:p.t,v:p.mu}))}],v=>v>=100?v.toFixed(0):v.toFixed(1),20);
+  drawSeries($('c2'),[{name:'Ping',color:'--lat',pts:lat.map(p=>({t:p.t,v:p.ms}))}],v=>v.toFixed(0),20);
+  const win=lat.filter(p=>p.phase==='idle'&&p.ms!=null).map(p=>p.ms), ld=lat.filter(p=>p.phase==='load');
+  const lv=ld.filter(p=>p.ms!=null).map(p=>p.ms), med=a=>a.length?a.slice().sort((x,y)=>x-y)[a.length>>1]:null;
+  const mi=med(win.slice(-40)), ml=med(lv);
+  $('latIdle').textContent=mi!=null?mi.toFixed(1):'–'; $('latLoad').textContent=ml!=null?ml.toFixed(1):'–';
+  if(mi!=null&&ml!=null){const d=ml-mi,g=d<30?['Excelente','--ok']:d<80?['Aceptable','--warn']:['Bufferbloat alto','--bad'];
+    $('bloat').innerHTML=`<span class="pill" style="background:${css(g[1])}">${g[0]} (+${d.toFixed(0)} ms)</span>`}
+  if(lv.length>5){let j=0;for(let i=1;i<lv.length;i++)j+=Math.abs(lv[i]-lv[i-1]);const lost=ld.length-lv.length;
+    $('jit').textContent=`jitter ${(j/(lv.length-1)).toFixed(1)} ms · pérdidas ${lost}/${ld.length}`}
+}
+for(const id of ['c1','c2']){const c=$(id);
+  c.onmousemove=e=>{const m=c._m;if(!m)return;const r=c.getBoundingClientRect(),x=e.clientX-r.left,t=m.t0+(x-m.L)/(m.w-m.L-m.R)*SPAN;
+    const rows=m.series.map(s=>{let b=null,bd=1e9;for(const p of s.pts){const d=Math.abs(p.t-t);if(d<bd&&p.v!=null){bd=d;b=p}}return b&&bd<2000?`<span style="color:${css(s.color)}">●</span> ${s.name}: <b>${m.yfmt(b.v)}</b>`:null}).filter(Boolean);
+    const tip=$('tip');if(!rows.length){tip.style.display='none';return}
+    tip.innerHTML=rows.join('<br>');tip.style.display='block';tip.style.left=Math.min(e.clientX+12,innerWidth-170)+'px';tip.style.top=(e.clientY+12)+'px'};
+  c.onmouseleave=()=>$('tip').style.display='none'}
+addEventListener('resize',draw);
+
+/* ---------- ejecución ---------- */
+const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:0;
+async function runLevel(n,dir,secs){
+  setLoad(n,dir); const t0=Date.now();
+  await sleep(secs*1000); if(!running)return null;
+  const w0=t0+Math.min(2500,secs*400); const M=hist.filter(p=>p.t>=w0);
+  const L=lat.filter(p=>p.t>=w0&&p.ms!=null).map(p=>p.ms).sort((a,b)=>a-b);
+  return{n,md:avg(M.map(p=>p.md)),mu:avg(M.map(p=>p.mu)),lat:L.length?L[L.length>>1]:null};
+}
+function stopRun(){ if(!running)return; running=false; stopAll(); stopPing(); stopSampling(); phase='idle'; $('go').textContent='Iniciar'; $('go').className=''; }
+$('go').onclick=async()=>{
+  if(running){ stopRun(); return; }
+  running=true;$('go').textContent='Detener';$('go').className='stop';
+  $('res').innerHTML='';$('resCard').style.display='none';$('verdict').textContent='';peak=0;totBytes=0;errCount=0;clearErr();
+  hist.length=0; lat.length=0;
+  startTime=Date.now();
+  const focusMin=+$('focus').value; stopAt = focusMin? startTime+focusMin*60000 : 0;
+  capBytes = (+$('cap').value)*1e9;
+  $('focusNote').textContent = focusMin? `Se detiene a los ${focusMin} min` : (capBytes? `Se detiene a los ${$('cap').value} GB` : '');
+  const dir=$('dir').value, res=[];
+  startPing(); startSampling();
+  phase='idle'; await sleep(3000);               // línea base de latencia
+  if(!running)return; phase='load';
+  if($('mode').value==='ramp'){
+    for(let n=1;n<=6&&running;n++){
+      const r=await runLevel(n,dir,6); if(!r)break; res.push(r);
+      $('resCard').style.display='block';
+      $('res').innerHTML=res.map(r=>`<tr><td>${r.n}</td><td>${r.md.toFixed(1)}</td><td>${r.mu.toFixed(1)}</td><td><b>${(r.md+r.mu).toFixed(1)}</b></td><td>${r.lat!=null?r.lat.toFixed(0)+' ms':'–'}</td></tr>`).join('');
+    }
+    if(res.length>1){const best=res.reduce((a,b)=>(b.md+b.mu)>(a.md+a.mu)?b:a);
+      let sat=res.find((r,i)=>i>0&&(r.md+r.mu)<(res[i-1].md+res[i-1].mu)*1.05);
+      $('verdict').textContent=`Máximo medido: ${(best.md+best.mu).toFixed(0)} Mbps con ${best.n} conexiones.`+(sat?` El rendimiento dejó de crecer a partir de ${sat.n} conexiones: ahí empieza la saturación (al menos de este dispositivo/origen).`:' Sigue creciendo: añade otro dispositivo o la URL extra en Opciones avanzadas.')}
+    stopRun();
+  }else{
+    setLoad(+$('n').value,dir);
+    // se queda corriendo hasta Detener, el foco o el tope de datos
+  }
+};
+</script></body></html>
